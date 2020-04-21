@@ -1,0 +1,469 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "TicketRCAFactory"
+        },
+        "TicketsSource_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'TicketsSource'"
+        },
+        "CosmosDbMongoDBDestination_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'CosmosDbMongoDBDestination'"
+        },
+        "SupportDesk_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'SupportDesk'"
+        },
+        "LatestTicketBlob_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString' of 'LatestTicketBlob'"
+        },
+        "TicketMLService_apiKey": {
+            "type": "secureString",
+            "metadata": "Secure string for 'apiKey' of 'TicketMLService'"
+        },
+        "DestinationDataset_e9n_properties_typeProperties_fileName": {
+            "type": "string",
+            "defaultValue": "LatestTicket.csv"
+        },
+        "DestinationDataset_e9n_properties_typeProperties_folderPath": {
+            "type": "string",
+            "defaultValue": "uploadedresources"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('factoryName'), '/CopyPipeline_Tickets2Mongo')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Copy_6km",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false
+                        },
+                        "userProperties": [
+                            {
+                                "name": "Source",
+                                "value": "[[dbo].[AllTickets]"
+                            },
+                            {
+                                "name": "Destination",
+                                "value": "Tickets"
+                            }
+                        ],
+                        "typeProperties": {
+                            "source": {
+                                "type": "SqlSource"
+                            },
+                            "sink": {
+                                "type": "DocumentDbCollectionSink",
+                                "nestingSeparator": ".",
+                                "writeBatchSize": 10000,
+                                "writeBehavior": "insert"
+                            },
+                            "enableStaging": false,
+                            "dataIntegrationUnits": 0
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "SourceDataset_6km",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "DestinationDataset_6km",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            }
+                        ]
+                    }
+                ],
+                "annotations": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/SourceDataset_6km')]",
+                "[concat(variables('factoryId'), '/datasets/DestinationDataset_6km')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/CopyTopRow')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Copy_e9n",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false
+                        },
+                        "userProperties": [
+                            {
+                                "name": "Destination",
+                                "value": "uploadedresources/LatestTicket.csv"
+                            }
+                        ],
+                        "typeProperties": {
+                            "source": {
+                                "type": "SqlSource",
+                                "sqlReaderQuery": "SELECT TOP 1 UserQuery FROM [dbo].[AllTickets] ORDER BY SubmitDateTime DESC"
+                            },
+                            "sink": {
+                                "type": "BlobSink"
+                            },
+                            "enableStaging": false,
+                            "dataIntegrationUnits": 0
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "SourceDataset_e9n",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "DestinationDataset_e9n",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Classify Ticket",
+                        "type": "AzureMLBatchExecution",
+                        "dependsOn": [
+                            {
+                                "activity": "Copy_e9n",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "webServiceOutputs": {
+                                "105": {
+                                    "filePath": "uploadedresources",
+                                    "linkedServiceName": {
+                                        "referenceName": "LatestTicketBlob",
+                                        "type": "LinkedServiceReference"
+                                    }
+                                }
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "TicketMLService",
+                            "type": "LinkedServiceReference"
+                        }
+                    }
+                ],
+                "annotations": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/SourceDataset_e9n')]",
+                "[concat(variables('factoryId'), '/datasets/DestinationDataset_e9n')]",
+                "[concat(variables('factoryId'), '/linkedServices/TicketMLService')]",
+                "[concat(variables('factoryId'), '/linkedServices/LatestTicketBlob')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/SourceDataset_6km')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "TicketsSource",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "SqlServerTable",
+                "typeProperties": {
+                    "tableName": "[[dbo].[AllTickets]"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/TicketsSource')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/DestinationDataset_6km')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "CosmosDbMongoDBDestination",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "DocumentDbCollection",
+                "typeProperties": {
+                    "collectionName": "Tickets"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/CosmosDbMongoDBDestination')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/SourceDataset_e9n')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "SupportDesk",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "typeProperties": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/SupportDesk')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/DestinationDataset_e9n')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "LatestTicketBlob",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "AzureBlob",
+                "typeProperties": {
+                    "format": {
+                        "type": "TextFormat",
+                        "columnDelimiter": ",",
+                        "rowDelimiter": "",
+                        "nullValue": "\\N",
+                        "treatEmptyAsNull": true,
+                        "skipLineCount": 0,
+                        "firstRowAsHeader": false
+                    },
+                    "fileName": "[parameters('DestinationDataset_e9n_properties_typeProperties_fileName')]",
+                    "folderPath": "[parameters('DestinationDataset_e9n_properties_typeProperties_folderPath')]"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/LatestTicketBlob')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/integrationRuntimeCopyActivity')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "Managed",
+                "typeProperties": {
+                    "computeProperties": {
+                        "location": "AutoResolve",
+                        "dataFlowProperties": {
+                            "computeType": "General",
+                            "coreCount": 8,
+                            "timeToLive": 0
+                        }
+                    }
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/Trigger_hht')]",
+            "type": "Microsoft.DataFactory/factories/triggers",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "runtimeState": "Stopped",
+                "type": "TumblingWindowTrigger",
+                "typeProperties": {
+                    "frequency": "Hour",
+                    "interval": 24,
+                    "startTime": "2018-08-18T11:40:32.439Z",
+                    "delay": "00:00:00",
+                    "maxConcurrency": 50,
+                    "retryPolicy": {
+                        "intervalInSeconds": 30
+                    },
+                    "dependsOn": []
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/Trigger_6km')]",
+            "type": "Microsoft.DataFactory/factories/triggers",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "runtimeState": "Stopped",
+                "pipelines": [],
+                "type": "ScheduleTrigger",
+                "typeProperties": {
+                    "recurrence": {
+                        "frequency": "Day",
+                        "interval": 1,
+                        "startTime": "2018-08-18T11:59:18.402Z",
+                        "timeZone": "UTC",
+                        "schedule": {
+                            "minutes": [
+                                0
+                            ],
+                            "hours": [
+                                22
+                            ]
+                        }
+                    }
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/Trigger_e9n')]",
+            "type": "Microsoft.DataFactory/factories/triggers",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "runtimeState": "Stopped",
+                "pipeline": {
+                    "pipelineReference": {
+                        "referenceName": "CopyTopRow",
+                        "type": "PipelineReference"
+                    },
+                    "parameters": {}
+                },
+                "type": "TumblingWindowTrigger",
+                "typeProperties": {
+                    "frequency": "Hour",
+                    "interval": 24,
+                    "startTime": "2018-08-18T17:48:17.413Z",
+                    "delay": "00:00:00",
+                    "maxConcurrency": 50,
+                    "retryPolicy": {
+                        "intervalInSeconds": 30
+                    },
+                    "dependsOn": []
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/pipelines/CopyTopRow')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/TicketsSource')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "SqlServer",
+                "typeProperties": {
+                    "connectionString": "[parameters('TicketsSource_connectionString')]"
+                },
+                "connectVia": {
+                    "referenceName": "integrationRuntimeCopyActivity",
+                    "type": "IntegrationRuntimeReference"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/integrationRuntimes/integrationRuntimeCopyActivity')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/CosmosDbMongoDBDestination')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "CosmosDb",
+                "typeProperties": {
+                    "connectionString": "[parameters('CosmosDbMongoDBDestination_connectionString')]"
+                },
+                "connectVia": {
+                    "referenceName": "integrationRuntimeCopyActivity",
+                    "type": "IntegrationRuntimeReference"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/integrationRuntimes/integrationRuntimeCopyActivity')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/SupportDesk')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureSqlDatabase",
+                "typeProperties": {
+                    "connectionString": "[parameters('SupportDesk_connectionString')]"
+                },
+                "connectVia": {
+                    "referenceName": "integrationRuntimeCopyActivity",
+                    "type": "IntegrationRuntimeReference"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/integrationRuntimes/integrationRuntimeCopyActivity')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/LatestTicketBlob')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "connectionString": "[parameters('LatestTicketBlob_connectionString')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/TicketMLService')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureML",
+                "typeProperties": {
+                    "mlEndpoint": "https://ussouthcentral.services.azureml.net/workspaces/7cad6f4469894729b8b182397f451623/services/8fa5bef2ce084bc6b73af8de0f6285f6/jobs?api-version=2.0",
+                    "apiKey": {
+                        "type": "SecureString",
+                        "value": "[parameters('TicketMLService_apiKey')]"
+                    }
+                }
+            },
+            "dependsOn": []
+        }
+    ]
+}
