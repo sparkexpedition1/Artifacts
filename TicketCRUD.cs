@@ -163,7 +163,8 @@ namespace DataBench.Controllers
                 return Json(new { message = "Failed to edit " + file.FileName });
             }
         }
-
+        
+        //Crud Operations on ticket T1804733
         public ActionResult DeleteBlobItem(CloudFile file)
         {
             string searchStorageConnectionString = "", container = "";
